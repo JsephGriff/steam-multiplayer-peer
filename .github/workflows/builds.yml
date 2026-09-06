@@ -1,17 +1,16 @@
 name: Build GDExtension
 on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
-      inputs:
-        steamworks_sdk_tag:
-            description: 'Steamworks SDK Tag:'
-            required: true
-            type: string
-            default: 'sdk-1.59'
-        godotsteam_version:
-            description: 'Steam Multiplayer Peer Tag:'
-            required: true
-            type: string
-            default: '0.0.1'
+    inputs:
+      steamworks_sdk_branch:
+        description: 'Steamworks SDK branch (flibitijibibo/steamworks-sdk):'
+        required: true
+        type: string
+        default: '1.62'
 
 env:
   LIBNAME: steam-multiplayer-peer
@@ -39,14 +38,6 @@ jobs:
           ]
         target-type: [template_debug, template_release]
         float-precision: [single, double]
-        # include: # Also build a release version for these specific targets. Remove if you add template_release above.
-        #   - target: { platform: linux, arch: x86_64, os: ubuntu-22.04 }
-        #     target-type: template_release
-        #     float-precision: single
-
-        #   - target: { platform: linux, arch: x86_64, os: ubuntu-22.04 }
-        #     target-type: template_release
-        #     float-precision: double
 
     runs-on: ${{ matrix.target.os }}
     steps:
@@ -57,28 +48,18 @@ jobs:
           submodules: true
 
       - name: Checkout Steamworks SDK
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          lfs: true
-          path: "steamworks"
-          repository: ${{ secrets.steamworks_sdk_repo }}
-          ref: ${{ inputs.steamworks_sdk_tag }}
+          repository: flibitijibibo/steamworks-sdk
+          ref: ${{ inputs.steamworks_sdk_branch || '1.62' }}
+          path: steamworks
 
       - name: Copy Steamworks
         shell: bash
         run: |
-          cp -r steamworks/public steam-multiplayer-peer/sdk
-          cp -r steamworks/redistributable_bin steam-multiplayer-peer/sdk
-
-      # Lint
-      #- name: Setup clang-format
-      #  shell: bash
-      #  run: |
-      #    python -m pip install clang-format
-      #- name: Run clang-format
-      #  shell: bash
-      #  run: |
-      #    clang-format src/** --dry-run --Werror
+          mkdir -p steam-multiplayer-peer/sdk/public
+          cp -r steamworks/steam steam-multiplayer-peer/sdk/public/steam
+          cp -r steamworks/redistributable_bin steam-multiplayer-peer/sdk/redistributable_bin
 
       # Setup dependencies
       - name: Setup godot-cpp
@@ -135,3 +116,46 @@ jobs:
           name: steam-multiplayer-peer
           pattern: steam-multiplayer-peer-*
           delete-merged: true
+
+  # On version tags, assemble a drop-in Godot addon zip and publish a release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: merge
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: steam-multiplayer-peer
+          path: dist
+
+      - name: Checkout Steamworks SDK (runtime libraries)
+        uses: actions/checkout@v4
+        with:
+          repository: flibitijibibo/steamworks-sdk
+          ref: ${{ inputs.steamworks_sdk_branch || '1.62' }}
+          path: steamworks
+
+      - name: Assemble addon
+        shell: bash
+        run: |
+          mkdir -p addon/windows addon/linux addon/macos
+          cp dist/*windows* addon/windows/
+          cp dist/*linux* addon/linux/
+          cp dist/*macos* addon/macos/
+          cp steamworks/redistributable_bin/win64/steam_api64.dll addon/windows/
+          cp steamworks/redistributable_bin/linux64/libsteam_api.so addon/linux/
+          cp steamworks/redistributable_bin/osx/libsteam_api.dylib addon/macos/
+          cp steam-multiplayer-peer.gdextension README.md LICENSE addon/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip -r steam-multiplayer-peer-${{ github.ref_name }}.zip addon
+          gh release create "$GITHUB_REF_NAME" "steam-multiplayer-peer-${{ github.ref_name }}.zip" --generate-notes --title "$GITHUB_REF_NAME"
