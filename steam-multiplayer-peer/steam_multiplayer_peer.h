@@ -14,6 +14,7 @@
 using namespace godot;
 
 #define MAX_PLAYERS_PER_SERVER 16
+#define MAX_CHANNELS_SETTING "steam_multiplayer_peer/max_channels"
 
 class SteamMultiplayerPeer : public MultiplayerPeerExtension {
 	GDCLASS(SteamMultiplayerPeer, MultiplayerPeerExtension)
@@ -32,6 +33,7 @@ private:
 	_FORCE_INLINE_ bool _is_active() const { return active_mode != MODE_NONE; }
 	int32_t target_peer = -1;
 	TransferMode transfer_mode = TRANSFER_MODE_RELIABLE;
+	int32_t transfer_channel = 0;
 	bool no_nagle = false;
 	bool no_delay = false;
 	// bool as_relay = false;
@@ -155,10 +157,10 @@ public:
 	int32_t _get_max_packet_size() const override;
 	// PackedByteArray _get_packet_script();
 	// Error _put_packet_script(const PackedByteArray &p_buffer);
-	int32_t _get_packet_channel() const;
-	MultiplayerPeer::TransferMode _get_packet_mode() const;
+	int32_t _get_packet_channel() const override;
+	MultiplayerPeer::TransferMode _get_packet_mode() const override;
 	void _set_transfer_channel(int32_t p_channel) override;
-	int32_t _get_transfer_channel() const;
+	int32_t _get_transfer_channel() const override;
 	void _set_transfer_mode(MultiplayerPeer::TransferMode p_mode) override;
 	MultiplayerPeer::TransferMode _get_transfer_mode() const override;
 	void _set_target_peer(int32_t p_peer) override;
@@ -177,6 +179,8 @@ public:
 	bool close_listen_socket();
 	Error create_host(int n_local_virtual_port);
 	Error create_client(uint64_t identity_remote, int n_remote_virtual_port);
+	Error create_host_ip(int n_local_port);
+	Error create_client_ip(const String &p_ip_address, int n_remote_port);
 	bool get_identity(SteamNetworkingIdentity *p_identity);
 	const SteamNetworkingConfigValue_t *convert_options_array(Array options);
 	Ref<SteamConnection> get_connection_by_peer(int peer_id);
@@ -184,6 +188,9 @@ public:
 
 	void _process_message(const SteamNetworkingMessage_t *msg);
 	void _process_ping(const SteamNetworkingMessage_t *msg);
+
+	Dictionary get_channel_packet();
+	int32_t get_channel_packet_count() const;
 
 	uint64_t get_steam64_from_peer_id(const uint32_t peer_id) const; //Steam64 is a Steam ID
 	uint32_t get_peer_id_from_steam64(const uint64_t steamid) const;
@@ -220,7 +227,10 @@ private:
 
 	Ref<SteamPacketPeer> next_received_packet; // gets deleted at the very first get_packet request
 	List<Ref<SteamPacketPeer>> incoming_packets;
+	List<Ref<SteamPacketPeer>> channel_packets;
 	const int _get_steam_transfer_flag();
+	int32_t _get_max_channels() const;
+	void _configure_lanes(HSteamNetConnection p_connection);
 	ConnectionStatus connection_status = ConnectionStatus::CONNECTION_DISCONNECTED;
 
 	// Networking Sockets callbacks /////////

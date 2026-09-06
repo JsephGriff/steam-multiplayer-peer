@@ -5,7 +5,15 @@ void SteamConnection::_bind_methods() {
 }
 
 EResult SteamConnection::_raw_send(Ref<SteamPacketPeer> packet) {
-	return SteamNetworkingSockets()->SendMessageToConnection(steam_connection, packet->data, packet->size, packet->transfer_mode, nullptr);
+	SteamNetworkingMessage_t *msg = SteamNetworkingUtils()->AllocateMessage(packet->size);
+	ERR_FAIL_NULL_V(msg, k_EResultFail);
+	memcpy(msg->m_pData, packet->data, packet->size);
+	msg->m_conn = steam_connection;
+	msg->m_nFlags = packet->transfer_mode;
+	msg->m_idxLane = packet->transfer_channel;
+	int64_t message_number = 0;
+	SteamNetworkingSockets()->SendMessages(1, &msg, &message_number);
+	return message_number < 0 ? (EResult)(-message_number) : k_EResultOK;
 }
 
 // TODO change to return correct error

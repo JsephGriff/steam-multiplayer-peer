@@ -1,0 +1,12 @@
+config_version=5
+
+[application]
+
+config/name="steam-multiplayer-peer channel test"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7")
+
+[steam]
+
+initialization/app_id=3876730
+initialization/initialize_on_startup=true

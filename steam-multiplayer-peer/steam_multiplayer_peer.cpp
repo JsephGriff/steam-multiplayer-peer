@@ -1,4 +1,6 @@
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
+#include <godot_cpp/core/math.hpp>
 
 #include "steam_multiplayer_peer.h"
 
@@ -35,11 +37,17 @@ Error SteamMultiplayerPeer::_put_packet(const uint8_t *p_buffer, int32_t p_buffe
 	ERR_FAIL_COND_V_MSG(target_peer != 0 && !peerId_to_steamId.has(ABS(target_peer)), ERR_INVALID_PARAMETER, vformat("Invalid target peer: %d", target_peer));
 	ERR_FAIL_COND_V(active_mode == MODE_CLIENT && !peerId_to_steamId.has(1), ERR_BUG);
 	int transferMode = _get_steam_transfer_flag();
+	int32_t max_channels = _get_max_channels();
+	int32_t channel = transfer_channel;
+	if (channel < 0 || channel >= max_channels) {
+		WARN_PRINT_ONCE(vformat("Transfer channel %d is out of range 0..%d, falling back to channel 0.", channel, max_channels - 1));
+		channel = 0;
+	}
 
 	if (target_peer == 0) {
 		Error returnValue = OK;
 		for (HashMap<uint64_t, Ref<SteamConnection>>::Iterator E = connections_by_steamId64.begin(); E; ++E) {
-			Ref<SteamPacketPeer> packet = Ref<SteamPacketPeer>(memnew(SteamPacketPeer(p_buffer, p_buffer_size, transferMode)));
+			Ref<SteamPacketPeer> packet = Ref<SteamPacketPeer>(memnew(SteamPacketPeer(p_buffer, p_buffer_size, transferMode, channel)));
 			Error errorCode = E->value->send(packet);
 			if (errorCode != OK) {
 				returnValue = errorCode;
@@ -47,7 +55,7 @@ Error SteamMultiplayerPeer::_put_packet(const uint8_t *p_buffer, int32_t p_buffe
 		}
 		return returnValue;
 	} else {
-		Ref<SteamPacketPeer> packet = Ref<SteamPacketPeer>(memnew(SteamPacketPeer(p_buffer, p_buffer_size, transferMode)));
+		Ref<SteamPacketPeer> packet = Ref<SteamPacketPeer>(memnew(SteamPacketPeer(p_buffer, p_buffer_size, transferMode, channel)));
 		return get_connection_by_peer(target_peer)->send(packet);
 	}
 }
@@ -62,7 +70,8 @@ int32_t SteamMultiplayerPeer::_get_max_packet_size() const {
 }
 
 int32_t SteamMultiplayerPeer::_get_packet_channel() const {
-	return 0;
+	ERR_FAIL_COND_V_MSG(incoming_packets.size() == 0, 0, "No pending packets, cannot get packet channel.");
+	return incoming_packets.front()->get()->transfer_channel;
 }
 
 MultiplayerPeer::TransferMode SteamMultiplayerPeer::_get_packet_mode() const {
@@ -76,11 +85,33 @@ MultiplayerPeer::TransferMode SteamMultiplayerPeer::_get_packet_mode() const {
 	}
 }
 
+int32_t SteamMultiplayerPeer::get_channel_packet_count() const {
+	return channel_packets.size();
+}
+
+Dictionary SteamMultiplayerPeer::get_channel_packet() {
+	ERR_FAIL_COND_V_MSG(channel_packets.size() == 0, Dictionary(), "No incoming channel packets available.");
+	Ref<SteamPacketPeer> packet = channel_packets.front()->get();
+	channel_packets.pop_front();
+
+	Ref<SteamConnection> connection = connections_by_steamId64[packet->sender];
+	PackedByteArray data;
+	data.resize(packet->size);
+	memcpy(data.ptrw(), packet->data, packet->size);
+
+	Dictionary channel_packet;
+	channel_packet["channel"] = packet->transfer_channel;
+	channel_packet["peer"] = connection->peer_id;
+	channel_packet["data"] = data;
+	return channel_packet;
+}
+
 void SteamMultiplayerPeer::_set_transfer_channel(int32_t p_channel) {
+	transfer_channel = p_channel;
 }
 
 int32_t SteamMultiplayerPeer::_get_transfer_channel() const {
-	return 0;
+	return transfer_channel;
 }
 
 void SteamMultiplayerPeer::_set_transfer_mode(MultiplayerPeer::TransferMode p_mode) {
@@ -120,7 +151,8 @@ void SteamMultiplayerPeer::_poll() {
 		if (count > 0) {
 			for (int i = 0; i < count; i++) {
 				SteamNetworkingMessage_t *msg = messages[i];
-				if (get_peer_id_from_steam64(msg->m_identityPeer.GetSteamID64()) != -1) {
+				uint64_t sender_id = msg->m_identityPeer.GetSteamID64();
+				if (connections_by_steamId64.has(sender_id) && connections_by_steamId64[sender_id]->peer_id != -1) {
 					_process_message(msg);
 				} else {
 					_process_ping(msg);
@@ -285,22 +317,96 @@ Error SteamMultiplayerPeer::create_client(uint64_t identity_remote, int n_remote
 		return Error::ERR_CANT_CONNECT;
 	}
 
+	_configure_lanes(connection);
+
 	active_mode = MODE_CLIENT;
 	connection_status = ConnectionStatus::CONNECTION_CONNECTING;
 	return Error::OK;
+}
+
+int32_t SteamMultiplayerPeer::_get_max_channels() const {
+	return CLAMP(ProjectSettings::get_singleton()->get_setting(MAX_CHANNELS_SETTING).operator int32_t(), 1, 255);
+}
+
+void SteamMultiplayerPeer::_configure_lanes(HSteamNetConnection p_connection) {
+	int32_t max_channels = _get_max_channels();
+	if (max_channels <= 1) {
+		return;
+	}
+	// Lane 0 keeps the highest priority so default traffic is never queued behind channel lanes.
+	int lane_priorities[255];
+	for (int32_t i = 0; i < max_channels; i++) {
+		lane_priorities[i] = i > 0;
+	}
+	EResult result = SteamNetworkingSockets()->ConfigureConnectionLanes(p_connection, max_channels, lane_priorities, nullptr);
+	if (result != k_EResultOK) {
+		WARN_PRINT(vformat("Failed to configure %d connection lanes: %d", max_channels, result));
+	}
 }
 
 bool SteamMultiplayerPeer::get_identity(SteamNetworkingIdentity *p_identity) {
 	return SteamNetworkingSockets()->GetIdentity(p_identity);
 }
 
+Error SteamMultiplayerPeer::create_host_ip(int n_local_port) {
+	ERR_FAIL_COND_V_MSG(_is_active(), ERR_ALREADY_IN_USE, "The multiplayer instance is already active.");
+	if (SteamNetworkingSockets() == NULL) {
+		return Error::ERR_UNAVAILABLE;
+	}
+	SteamNetworkingIPAddr local_address;
+	local_address.Clear();
+	local_address.m_port = n_local_port;
+	SteamNetworkingConfigValue_t allow_without_auth;
+	allow_without_auth.SetInt32(k_ESteamNetworkingConfig_IP_AllowWithoutAuth, 1);
+
+	listen_socket = SteamNetworkingSockets()->CreateListenSocketIP(local_address, 1, &allow_without_auth);
+	if (listen_socket == k_HSteamListenSocket_Invalid) {
+		return Error::ERR_CANT_CREATE;
+	}
+	unique_id = 1;
+	active_mode = MODE_SERVER;
+	connection_status = ConnectionStatus::CONNECTION_CONNECTED;
+	return Error::OK;
+}
+
+Error SteamMultiplayerPeer::create_client_ip(const String &p_ip_address, int n_remote_port) {
+	ERR_FAIL_COND_V_MSG(_is_active(), ERR_ALREADY_IN_USE, "The multiplayer instance is already active.");
+	if (SteamNetworkingSockets() == NULL) {
+		return Error::ERR_UNAVAILABLE;
+	}
+	SteamNetworkingIPAddr remote_address;
+	remote_address.Clear();
+	if (!remote_address.ParseString(p_ip_address.utf8().get_data())) {
+		return Error::ERR_INVALID_PARAMETER;
+	}
+	remote_address.m_port = n_remote_port;
+	SteamNetworkingConfigValue_t allow_without_auth;
+	allow_without_auth.SetInt32(k_ESteamNetworkingConfig_IP_AllowWithoutAuth, 1);
+
+	unique_id = generate_unique_id();
+	connection = SteamNetworkingSockets()->ConnectByIPAddress(remote_address, 1, &allow_without_auth);
+	if (connection == k_HSteamNetConnection_Invalid) {
+		unique_id = 0;
+		return Error::ERR_CANT_CONNECT;
+	}
+
+	_configure_lanes(connection);
+	active_mode = MODE_CLIENT;
+	connection_status = ConnectionStatus::CONNECTION_CONNECTING;
+	return Error::OK;
+}
+
 void SteamMultiplayerPeer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("create_host", "n_local_virtual_port"), &SteamMultiplayerPeer::create_host, DEFVAL(nullptr));
 	ClassDB::bind_method(D_METHOD("create_client", "identity_remote", "n_local_virtual_port"), &SteamMultiplayerPeer::create_client, DEFVAL(nullptr));
+	ClassDB::bind_method(D_METHOD("create_host_ip", "n_local_port"), &SteamMultiplayerPeer::create_host_ip);
+	ClassDB::bind_method(D_METHOD("create_client_ip", "ip_address", "n_remote_port"), &SteamMultiplayerPeer::create_client_ip);
 	ClassDB::bind_method(D_METHOD("set_listen_socket", "listen_socket"), &SteamMultiplayerPeer::set_listen_socket);
 	ClassDB::bind_method(D_METHOD("get_listen_socket"), &SteamMultiplayerPeer::get_listen_socket);
 	ClassDB::bind_method(D_METHOD("get_steam64_from_peer_id", "peer_id"), &SteamMultiplayerPeer::get_steam64_from_peer_id);
 	ClassDB::bind_method(D_METHOD("get_peer_id_from_steam64", "steamid"), &SteamMultiplayerPeer::get_peer_id_from_steam64);
+	ClassDB::bind_method(D_METHOD("get_channel_packet"), &SteamMultiplayerPeer::get_channel_packet);
+	ClassDB::bind_method(D_METHOD("get_channel_packet_count"), &SteamMultiplayerPeer::get_channel_packet_count);
 	ClassDB::bind_method(D_METHOD("set_no_nagle", "no_nagle"), &SteamMultiplayerPeer::set_no_nagle);
 	ClassDB::bind_method(D_METHOD("get_no_nagle"), &SteamMultiplayerPeer::get_no_nagle);
 	ClassDB::bind_method(D_METHOD("set_no_delay", "no_delay"), &SteamMultiplayerPeer::set_no_delay);
@@ -443,6 +549,7 @@ void SteamMultiplayerPeer::network_connection_status_changed(SteamNetConnectionS
 			SteamNetworkingSockets()->CloseConnection(connect_handle, k_ESteamNetConnectionEnd_AppException_Generic, "Failed to accept connection", false);
 			return;
 		}
+		_configure_lanes(connect_handle);
 	}
 
 	// A connection you initiated has been accepted by the remote host.
@@ -519,8 +626,6 @@ Ref<SteamConnection> SteamMultiplayerPeer::get_connection_by_peer(int peer_id) {
 }
 
 void SteamMultiplayerPeer::add_connection(const uint64_t steam_id, HSteamNetConnection connection) {
-	ERR_FAIL_COND_MSG(steam_id == SteamUser()->GetSteamID().ConvertToUint64(), "Cannot add self as a new peer.");
-
 	Ref<SteamConnection> connection_data = Ref<SteamConnection>(memnew(SteamConnection(steam_id)));
 	connection_data->steam_connection = connection;
 	connections_by_steamId64[steam_id] = connection_data;
@@ -533,10 +638,15 @@ void SteamMultiplayerPeer::_process_message(const SteamNetworkingMessage_t *msg)
 	packet->sender = msg->m_identityPeer.GetSteamID64();
 	packet->size = msg->GetSize();
 	packet->transfer_mode = msg->m_nFlags;
+	packet->transfer_channel = msg->m_idxLane;
 
 	uint8_t *rawData = (uint8_t *)msg->GetData();
 	memcpy(packet->data, rawData, packet->size);
-	incoming_packets.push_back(packet);
+	if (packet->transfer_channel > 0) {
+		channel_packets.push_back(packet);
+	} else {
+		incoming_packets.push_back(packet);
+	}
 }
 
 void SteamMultiplayerPeer::_process_ping(const SteamNetworkingMessage_t *msg) {
@@ -581,7 +691,6 @@ uint32_t SteamMultiplayerPeer::get_peer_id_from_steam64(const uint64_t steamid) 
 }
 
 void SteamMultiplayerPeer::set_steam_id_peer(uint64_t steam_id, int peer_id) {
-	ERR_FAIL_COND_MSG(steam_id == SteamUser()->GetSteamID().ConvertToUint64(), "Cannot add self as a new peer.");
 	ERR_FAIL_COND_MSG(connections_by_steamId64.has(steam_id) == false, "Steam ID missing");
 
 	Ref<SteamConnection> con = connections_by_steamId64[steam_id];

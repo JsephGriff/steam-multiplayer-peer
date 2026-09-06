@@ -29,8 +29,9 @@ public:
 	uint32_t size = 0;
 	uint64_t sender;
 	int transfer_mode = SEND_RELIABLE;
+	int transfer_channel = 0;
 	SteamPacketPeer();
-	SteamPacketPeer(const void *p_buffer, uint32_t p_buffer_size, int transferMode);
+	SteamPacketPeer(const void *p_buffer, uint32_t p_buffer_size, int transferMode, int p_transfer_channel = 0);
 
 protected:
 	static void _bind_methods();

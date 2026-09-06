@@ -3,6 +3,7 @@
 #include <gdextension_interface.h>
 
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
@@ -15,6 +16,12 @@ using namespace godot;
 
 void initialize_steam_multiplayer_peer(ModuleInitializationLevel level) {
 	if (level == MODULE_INITIALIZATION_LEVEL_SCENE) {
+		if (!ProjectSettings::get_singleton()->has_setting(MAX_CHANNELS_SETTING)) {
+			ProjectSettings::get_singleton()->set(MAX_CHANNELS_SETTING, 4);
+		}
+		ProjectSettings::get_singleton()->set_initial_value(MAX_CHANNELS_SETTING, 4);
+		ProjectSettings::get_singleton()->set_as_basic(MAX_CHANNELS_SETTING, true);
+
 		ClassDB::register_class<SteamPacketPeer>();
 		ClassDB::register_class<SteamConnection>();
 		ClassDB::register_class<SteamMultiplayerPeer>();

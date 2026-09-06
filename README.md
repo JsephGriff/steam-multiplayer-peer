@@ -49,10 +49,14 @@ Thank you Michael!
 | Steam Connection | Steam Sockets [Steam Docs](https://partner.steamgames.com/doc/api/ISteamNetworkingSockets)<br>Steam's lowest connection level,<br>manages a connection <br>(It's very close to Enet, <br>that's why I chose this approach for the plugin) | Steam Messages [Steam Docs](https://partner.steamgames.com/doc/api/ISteamNetworkingMessages)<br>Without a connection idea,<br>the connection is managed by the lobby,<br>Need Steam lobbies. |
 | TODO  |  |  |
 
-## Known issues
+## Channels
 
-⚠️ No channel support currently
-- It's been concluded that it's a limitation of the socket system, I'll take it out of the plan for now. See issue (https://github.com/expressobits/steam-multiplayer-peer/issues/2)
+✔️ Channel support via [Steam lanes](https://partner.steamgames.com/doc/api/ISteamnetworkingSockets) (`ConfigureConnectionLanes`)
+
+- Channel 0 is used by the MultiplayerAPI (RPCs, replication) and keeps the highest send priority.
+- Packets sent on other channels (set `transfer_channel` before `put_packet`) travel on independent lower priority lanes, so heavy reliable transfers never delay channel 0 traffic.
+- Incoming packets from channels > 0 are not delivered to the MultiplayerAPI; read them with `get_channel_packet()` (returns `channel`, `peer`, `data`), check `get_channel_packet_count()` first.
+- The number of channels is configured with the `steam_multiplayer_peer/max_channels` project setting (default 4, max 255, keep it small).
 
 ## In Progress
 

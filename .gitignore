@@ -62,3 +62,11 @@ compile_commands.json
 steam-multiplayer-peer/sdk/public
 steam-multiplayer-peer/sdk/redistributable_bin
 compile_commands.json
+
+# dev_test local files
+dev_test/addons/
+dev_test/.godot/
+
+# Local build output
+bin/
+steam-multiplayer-peer/bin/
