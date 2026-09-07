@@ -43,12 +43,12 @@ jobs:
     steps:
       # Clone this repository
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
 
       - name: Checkout Steamworks SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: flibitijibibo/steamworks-sdk
           ref: ${{ inputs.steamworks_sdk_branch || '1.62' }}
@@ -98,7 +98,7 @@ jobs:
 
       # Upload the build
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: steam-multiplayer-peer-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.float-precision }}-${{ matrix.target-type }}
           path: |
@@ -111,7 +111,7 @@ jobs:
     needs: build
     steps:
       - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v4
+        uses: actions/upload-artifact/merge@v7
         with:
           name: steam-multiplayer-peer
           pattern: steam-multiplayer-peer-*
@@ -126,16 +126,16 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: steam-multiplayer-peer
           path: dist
 
       - name: Checkout Steamworks SDK (runtime libraries)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: flibitijibibo/steamworks-sdk
           ref: ${{ inputs.steamworks_sdk_branch || '1.62' }}
