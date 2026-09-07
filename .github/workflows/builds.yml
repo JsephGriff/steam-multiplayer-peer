@@ -133,6 +133,7 @@ jobs:
         with:
           name: steam-multiplayer-peer
           path: dist
+          merge-multiple: true
 
       - name: Checkout Steamworks SDK (runtime libraries)
         uses: actions/checkout@v7
