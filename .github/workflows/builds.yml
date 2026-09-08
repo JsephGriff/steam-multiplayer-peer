@@ -146,9 +146,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p addon/windows addon/linux addon/macos
-          cp dist/*windows* addon/windows/
-          cp dist/*linux* addon/linux/
-          cp dist/*macos* addon/macos/
+          
+          # Find and copy matching binary files recursively
+          find dist -type f -name "*windows*" -exec cp {} addon/windows/ \;
+          find dist -type f -name "*linux*" -exec cp {} addon/linux/ \;
+          find dist -type f -name "*macos*" -exec cp {} addon/macos/ \;
+
           cp steamworks/redistributable_bin/win64/steam_api64.dll addon/windows/
           cp steamworks/redistributable_bin/linux64/libsteam_api.so addon/linux/
           cp steamworks/redistributable_bin/osx/libsteam_api.dylib addon/macos/
