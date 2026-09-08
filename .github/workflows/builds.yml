@@ -145,21 +145,21 @@ jobs:
       - name: Assemble addon
         shell: bash
         run: |
-          mkdir -p addon/windows addon/linux addon/macos
-          
-          # Find and copy matching binary files recursively
-          find dist -type f -name "*windows*" -exec cp {} addon/windows/ \;
-          find dist -type f -name "*linux*" -exec cp {} addon/linux/ \;
-          find dist -type f -name "*macos*" -exec cp {} addon/macos/ \;
+          mkdir -p steam-multiplayer-peer/windows steam-multiplayer-peer/linux steam-multiplayer-peer/macos
 
-          cp steamworks/redistributable_bin/win64/steam_api64.dll addon/windows/
-          cp steamworks/redistributable_bin/linux64/libsteam_api.so addon/linux/
-          cp steamworks/redistributable_bin/osx/libsteam_api.dylib addon/macos/
-          cp steam-multiplayer-peer.gdextension README.md LICENSE addon/
+          # Find and copy matching binary files recursively
+          find dist -type f -name "*windows*" -exec cp {} steam-multiplayer-peer/windows/ \;
+          find dist -type f -name "*linux*" -exec cp {} steam-multiplayer-peer/linux/ \;
+          find dist -type f -name "*macos*" -exec cp {} steam-multiplayer-peer/macos/ \;
+
+          cp steamworks/redistributable_bin/win64/steam_api64.dll steam-multiplayer-peer/windows/
+          cp steamworks/redistributable_bin/linux64/libsteam_api.so steam-multiplayer-peer/linux/
+          cp steamworks/redistributable_bin/osx/libsteam_api.dylib steam-multiplayer-peer/macos/
+          cp steam-multiplayer-peer.gdextension README.md LICENSE steam-multiplayer-peer/
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          zip -r steam-multiplayer-peer-${{ github.ref_name }}.zip addon
+          zip -r steam-multiplayer-peer-${{ github.ref_name }}.zip steam-multiplayer-peer
           gh release create "$GITHUB_REF_NAME" "steam-multiplayer-peer-${{ github.ref_name }}.zip" --generate-notes --title "$GITHUB_REF_NAME"
