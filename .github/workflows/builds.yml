@@ -1,9 +1,7 @@
 name: Build GDExtension
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
     inputs:
       steamworks_sdk_branch:
