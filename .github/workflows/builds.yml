@@ -64,6 +64,7 @@ jobs:
         uses: ./godot-cpp/.github/actions/setup-godot-cpp
         with:
           platform: ${{ matrix.target.platform }}
+          windows-compiler: msvc
           em-version: 3.1.62
 
       # Build GDExtension (with caches)
@@ -143,21 +144,23 @@ jobs:
       - name: Assemble addon
         shell: bash
         run: |
-          mkdir -p steam-multiplayer-peer/windows steam-multiplayer-peer/linux steam-multiplayer-peer/macos
+          ADDON="$RUNNER_TEMP/steam-multiplayer-peer"
+          mkdir -p "$ADDON/windows" "$ADDON/linux" "$ADDON/macos"
 
           # Find and copy matching binary files recursively
-          find dist -type f -name "*windows*" -exec cp {} steam-multiplayer-peer/windows/ \;
-          find dist -type f -name "*linux*" -exec cp {} steam-multiplayer-peer/linux/ \;
-          find dist -type f -name "*macos*" -exec cp {} steam-multiplayer-peer/macos/ \;
+          find dist -type f -name "*windows*" -exec cp {} "$ADDON/windows/" \;
+          find dist -type f -name "*linux*" -exec cp {} "$ADDON/linux/" \;
+          find dist -type f -name "*macos*" -exec cp {} "$ADDON/macos/" \;
 
-          cp steamworks/redistributable_bin/win64/steam_api64.dll steam-multiplayer-peer/windows/
-          cp steamworks/redistributable_bin/linux64/libsteam_api.so steam-multiplayer-peer/linux/
-          cp steamworks/redistributable_bin/osx/libsteam_api.dylib steam-multiplayer-peer/macos/
-          cp steam-multiplayer-peer.gdextension README.md LICENSE steam-multiplayer-peer/
+          cp steamworks/redistributable_bin/win64/steam_api64.dll "$ADDON/windows/"
+          cp steamworks/redistributable_bin/linux64/libsteam_api.so "$ADDON/linux/"
+          cp steamworks/redistributable_bin/osx/libsteam_api.dylib "$ADDON/macos/"
+          cp steam-multiplayer-peer.gdextension README.md LICENSE "$ADDON/"
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cd "$RUNNER_TEMP"
           zip -r steam-multiplayer-peer-${{ github.ref_name }}.zip steam-multiplayer-peer
           gh release create "$GITHUB_REF_NAME" "steam-multiplayer-peer-${{ github.ref_name }}.zip" --generate-notes --title "$GITHUB_REF_NAME"
