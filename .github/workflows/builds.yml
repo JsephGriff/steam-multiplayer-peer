@@ -92,9 +92,9 @@ jobs:
       # Clean up compilation files
       - name: Windows - Delete compilation files
         if: ${{ matrix.target.platform == 'windows' }}
-        shell: pwsh
+        shell: bash
         run: |
-          Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+          rm -f bin/*.exp bin/*.lib bin/*.pdb
 
       # Upload the build
       - name: Upload Artifact
@@ -149,9 +149,9 @@ jobs:
           mkdir -p "$ADDON/windows" "$ADDON/linux" "$ADDON/macos"
 
           # Find and copy matching binary files recursively
-          find dist -type f -name "*windows*" -exec cp {} "$ADDON/windows/" \;
-          find dist -type f -name "*linux*" -exec cp {} "$ADDON/linux/" \;
-          find dist -type f -name "*macos*" -exec cp {} "$ADDON/macos/" \;
+          find dist -type f -name "*.dll" -exec cp {} "$ADDON/windows/" \;
+          find dist -type f -name "*.so" -exec cp {} "$ADDON/linux/" \;
+          find dist -type f -name "*.dylib" -exec cp {} "$ADDON/macos/" \;
 
           cp steamworks/redistributable_bin/win64/steam_api64.dll "$ADDON/windows/"
           cp steamworks/redistributable_bin/linux64/libsteam_api.so "$ADDON/linux/"
